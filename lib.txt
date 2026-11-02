@@ -388,14 +388,10 @@ function library:new(props)
 	local function fit()
 		local vp = cam.ViewportSize
 		local scale = math.clamp((vp.X - 16) / 500, 0.5, 1)
-		local reserve = utility.ismobile and 60 or 16 -- room for the drag handle on mobile
+		local reserve = 16
 		local height = math.clamp((vp.Y - reserve) / scale, 250, 606)
 		uiscale.Scale = scale
 		outline.Size = UDim2.new(0,500,0,height)
-		if utility.ismobile then
-			-- keeps the window below the drag handle
-			outline.Position = UDim2.new(0.5,0,0.5,14)
-		end
 	end
 	--
 	fit()
@@ -463,28 +459,6 @@ function library:new(props)
 	end)
 	-- // mobile controls
 	if utility.ismobile then
-		-- big drag handle above the window (the title bar is too small for a finger)
-		local handle = utility.new(
-			"TextButton",
-			{
-				AnchorPoint = Vector2.new(0.5,1),
-				AutoButtonColor = false,
-				BackgroundColor3 = color,
-				BorderColor3 = Color3.fromRGB(12, 12, 12),
-				BorderSizePixel = 1,
-				Size = UDim2.new(0,140,0,26),
-				Position = UDim2.new(0.5,0,0,-2),
-				Font = font,
-				Text = "= drag =",
-				TextColor3 = Color3.fromRGB(255,255,255),
-				TextSize = textsize,
-				TextStrokeTransparency = 0,
-				Parent = outline
-			}
-		)
-		table.insert(window.themeitems["accent"]["BackgroundColor3"],handle)
-		utility.dragify(handle,outline)
-		--
 		-- floating button to hide / show the menu (there is no RightShift on a phone)
 		local fabgui = utility.new(
 			"ScreenGui",
@@ -1110,6 +1084,7 @@ function library:page(props)
 			Size = UDim2.new(1,-20,1,-20),
 			Position = UDim2.new(0.5,0,0.5,0),
 			Visible = false,
+			ClipsDescendants = true,
 			Parent = self.tabs
 		}
 	)
