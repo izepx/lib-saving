@@ -59,6 +59,27 @@ utility.new = function(instance,properties)
 	return ins
 end
 --
+utility.ismobile = uis.TouchEnabled and not uis.MouseEnabled
+--
+-- // pointer position (mouse on pc, finger on mobile) in the same space as AbsolutePosition
+utility.pointer = function()
+	if utility.ismobile then
+		return uis:GetMouseLocation()
+	end
+	local m = plr:GetMouse()
+	return Vector2.new(m.X,m.Y)
+end
+--
+-- // stops pages from scrolling while a slider / colorpicker is being dragged with a finger
+utility.scrolllock = function(gui,state)
+	if not gui then return end
+	for _,v in pairs(gui:GetDescendants()) do
+		if v:IsA("ScrollingFrame") then
+			v.ScrollingEnabled = not state
+		end
+	end
+end
+--
 utility.dragify = function(ins,touse)
 	local dragging
 	local dragInput
@@ -67,7 +88,12 @@ utility.dragify = function(ins,touse)
 	--
 	local function update(input)
 		local delta = input.Position - dragStart
-		touse:TweenPosition(UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.1,true)
+		local pos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			touse.Position = pos -- no tween on touch, it feels laggy
+		else
+			touse:TweenPosition(pos,Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.1,true)
+		end
 	end
 	--
 	ins.InputBegan:Connect(function(input)
@@ -75,6 +101,7 @@ utility.dragify = function(ins,touse)
 			dragging = true
 			dragStart = input.Position
 			startPos = touse.Position
+			dragInput = input
 
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
@@ -147,6 +174,7 @@ function library:new(props)
 			DisplayOrder = 9999,
 			ResetOnSpawn = false,
 			ZIndexBehavior = "Global",
+			IgnoreGuiInset = utility.ismobile,
 			Parent = cre
 		}
 	)
@@ -354,61 +382,175 @@ function library:new(props)
 	}
 	--
 	table.insert(window.themeitems["accent"]["BackgroundColor3"],outline)
+	-- // fit the window to the screen (mobile / small viewports)
+	local uiscale = utility.new("UIScale",{Scale = 1,Parent = outline})
+	--
+	local function fit()
+		local vp = cam.ViewportSize
+		local scale = math.clamp((vp.X - 16) / 500, 0.5, 1)
+		local reserve = utility.ismobile and 60 or 16 -- room for the drag handle on mobile
+		local height = math.clamp((vp.Y - reserve) / scale, 250, 606)
+		uiscale.Scale = scale
+		outline.Size = UDim2.new(0,500,0,height)
+		if utility.ismobile then
+			-- keeps the window below the drag handle
+			outline.Position = UDim2.new(0.5,0,0.5,14)
+		end
+	end
+	--
+	fit()
+	cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 	--
 	local toggled = true
 	local cooldown = false
 	local saved = UDim2.new(0,0,0,0)
 	--
+	local function dotoggle()
+		if cooldown == false then
+			if toggled then
+				cooldown = true
+				toggled = not toggled
+				saved = outline.Position
+				local xx,yy = 0,0
+				local xxx,yyy = 0,0
+				--
+				if (outline.AbsolutePosition.X+(outline.AbsoluteSize.X/2)) < (cam.ViewportSize.X/2) then
+					xx = -3
+				else
+					xx = 3
+				end
+				--
+				if window.y then
+					if (outline.AbsolutePosition.Y+(outline.AbsoluteSize.Y/2)) < (cam.ViewportSize.Y/2) then
+						yy = -3
+					else
+						yy = 3
+					end
+				else
+					yy = saved.Y.Scale
+					yyy = saved.Y.Offset
+				end
+				--
+				if window.x == false and window.y == false then
+					screen.Enabled = false
+				else
+					ts:Create(outline, TweenInfo.new(0.5,Enum.EasingStyle.Quad,Enum.EasingDirection.In), {Position = UDim2.new(xx,xxx,yy,yyy)}):Play()
+				end
+				wait(0.5)
+				cooldown = false
+			else
+				cooldown = true
+				toggled = not toggled
+				if window.x == false and window.y == false then
+					screen.Enabled = true
+				else
+					ts:Create(outline, TweenInfo.new(0.5,Enum.EasingStyle.Quad,Enum.EasingDirection.Out), {Position = saved}):Play()
+				end
+				wait(0.5)
+				cooldown = false
+			end
+		end
+	end
+	--
+	window.toggle = dotoggle
+	--
 	uis.InputBegan:Connect(function(Input)
 		if Input.UserInputType == Enum.UserInputType.Keyboard then
 			if Input.KeyCode == window.key then
-				if cooldown == false then
-					if toggled then
-						cooldown = true
-						toggled = not toggled
-						saved = outline.Position
-						local xx,yy = 0,0
-						local xxx,yyy = 0,0
-						--
-						if (outline.AbsolutePosition.X+(outline.AbsoluteSize.X/2)) < (cam.ViewportSize.X/2) then
-							xx = -3
-						else
-							xx = 3
-						end
-						--
-						if window.y then
-							if (outline.AbsolutePosition.Y+(outline.AbsoluteSize.Y/2)) < (cam.ViewportSize.Y/2) then
-								yy = -3
-							else
-								yy = 3
-							end
-						else
-							yy = saved.Y.Scale
-							yyy = saved.Y.Offset
-						end
-						--
-						if window.x == false and window.y == false then
-							screen.Enabled = false
-						else
-							ts:Create(outline, TweenInfo.new(0.5,Enum.EasingStyle.Quad,Enum.EasingDirection.In), {Position = UDim2.new(xx,xxx,yy,yyy)}):Play()
-						end
-						wait(0.5)
-						cooldown = false
-					else
-						cooldown = true
-						toggled = not toggled
-						if window.x == false and window.y == false then
-							screen.Enabled = true
-						else
-							ts:Create(outline, TweenInfo.new(0.5,Enum.EasingStyle.Quad,Enum.EasingDirection.Out), {Position = saved}):Play()
-						end
-						wait(0.5)
-						cooldown = false
-					end
-				end
+				dotoggle()
 			end
 		end
 	end)
+	-- // mobile controls
+	if utility.ismobile then
+		-- big drag handle above the window (the title bar is too small for a finger)
+		local handle = utility.new(
+			"TextButton",
+			{
+				AnchorPoint = Vector2.new(0.5,1),
+				AutoButtonColor = false,
+				BackgroundColor3 = color,
+				BorderColor3 = Color3.fromRGB(12, 12, 12),
+				BorderSizePixel = 1,
+				Size = UDim2.new(0,140,0,26),
+				Position = UDim2.new(0.5,0,0,-2),
+				Font = font,
+				Text = "= drag =",
+				TextColor3 = Color3.fromRGB(255,255,255),
+				TextSize = textsize,
+				TextStrokeTransparency = 0,
+				Parent = outline
+			}
+		)
+		table.insert(window.themeitems["accent"]["BackgroundColor3"],handle)
+		utility.dragify(handle,outline)
+		--
+		-- floating button to hide / show the menu (there is no RightShift on a phone)
+		local fabgui = utility.new(
+			"ScreenGui",
+			{
+				Name = tostring(math.random(0,999999))..tostring(math.random(0,999999)),
+				DisplayOrder = 10000,
+				ResetOnSpawn = false,
+				ZIndexBehavior = "Global",
+				IgnoreGuiInset = true,
+				Parent = cre
+			}
+		)
+		if (check_exploit == "Synapse" and syn.request) then
+			syn.protect_gui(fabgui)
+		end
+		--
+		local fab = utility.new(
+			"TextButton",
+			{
+				AutoButtonColor = false,
+				BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+				BorderColor3 = color,
+				BorderSizePixel = 2,
+				Size = UDim2.new(0,44,0,44),
+				Position = UDim2.new(0,12,0.4,0),
+				Font = font,
+				Text = "UI",
+				TextColor3 = Color3.fromRGB(255,255,255),
+				TextSize = textsize + 2,
+				TextStrokeTransparency = 0,
+				Parent = fabgui
+			}
+		)
+		table.insert(window.themeitems["accent"]["BorderColor3"],fab)
+		--
+		-- tap = toggle, drag = move the button
+		local fabdrag,fabmoved,fabstart,fabpos = false,false,nil,nil
+		fab.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+				fabdrag = true
+				fabmoved = false
+				fabstart = input.Position
+				fabpos = fab.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						fabdrag = false
+						if not fabmoved then
+							dotoggle()
+						end
+					end
+				end)
+			end
+		end)
+		--
+		uis.InputChanged:Connect(function(input)
+			if fabdrag and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+				local delta = input.Position - fabstart
+				if delta.Magnitude > 8 then
+					fabmoved = true
+				end
+				if fabmoved then
+					fab.Position = UDim2.new(fabpos.X.Scale, fabpos.X.Offset + delta.X, fabpos.Y.Scale, fabpos.Y.Offset + delta.Y)
+				end
+			end
+		end)
+	end
 	--
 	window.labels[#window.labels+1] = titletext
 	-- // metatable indexing + return
@@ -1917,7 +2059,7 @@ function sections:slider(props)
 	}
 	--
 	local function slide()
-		local size = math.clamp(plr:GetMouse().X - slider.color.AbsolutePosition.X ,0 ,slider.color.AbsoluteSize.X)
+		local size = math.clamp(utility.pointer().X - slider.color.AbsolutePosition.X ,0 ,slider.color.AbsoluteSize.X)
 		local result = (slider.max - slider.min) / slider.color.AbsoluteSize.X * size + slider.min
 		if slider.rounding then
 			local newres = math.floor(result)
@@ -1944,6 +2086,7 @@ function sections:slider(props)
 	--
 	sliderbutton.MouseButton1Down:Connect(function()
 		slider.holding = true
+		utility.scrolllock(self.library.screen,true)
 		slide()
 		table.insert(self.library.themeitems["accent"]["BorderColor3"],outline)
 		outline.BorderColor3 = self.library.theme.accent
@@ -1956,8 +2099,9 @@ function sections:slider(props)
 	end)
 	--
 	uis.InputEnded:Connect(function(Input)
-		if Input.UserInputType.Name == 'MouseButton1' and slider.holding then
+		if (Input.UserInputType.Name == 'MouseButton1' or Input.UserInputType.Name == 'Touch') and slider.holding then
 			slider.holding = false
+			utility.scrolllock(self.library.screen,false)
 			outline.BorderColor3 = Color3.fromRGB(12, 12, 12)
 			local find = table.find(self.library.themeitems["accent"]["BorderColor3"],outline)
 			if find then
@@ -3857,7 +4001,7 @@ function sections:colorpicker(props)
 	updateboxes()
 	--
 	local function movehue()
-		local posy = math.clamp(plr:GetMouse().Y-outline3.AbsolutePosition.Y,0,outline3.AbsoluteSize.Y)
+		local posy = math.clamp(utility.pointer().Y-outline3.AbsolutePosition.Y,0,outline3.AbsoluteSize.Y)
 		local resy = (1/outline3.AbsoluteSize.Y)*posy
 		outline3.BackgroundColor3 = Color3.fromHSV(resy,1,1)
 		huecursor_inline.BackgroundColor3 = Color3.fromHSV(resy,1,1)
@@ -3870,7 +4014,8 @@ function sections:colorpicker(props)
 	end
 	--
 	local function movecp()
-		local posx,posy = math.clamp(plr:GetMouse().X-outline3.AbsolutePosition.X,0,outline3.AbsoluteSize.X),math.clamp(plr:GetMouse().Y-outline3.AbsolutePosition.Y,0,outline3.AbsoluteSize.Y)
+		local ptr = utility.pointer()
+		local posx,posy = math.clamp(ptr.X-outline3.AbsolutePosition.X,0,outline3.AbsoluteSize.X),math.clamp(ptr.Y-outline3.AbsolutePosition.Y,0,outline3.AbsoluteSize.Y)
 		local resx,resy = (1/outline3.AbsoluteSize.X)*posx,(1/outline3.AbsoluteSize.Y)*posy
 		colorpicker.hsv[2] = resx
 		colorpicker.hsv[3] = 1-resy
@@ -3889,11 +4034,13 @@ function sections:colorpicker(props)
 	--
 	huebutton.MouseButton1Down:Connect(function()
 		colorpicker.hue = true
+		utility.scrolllock(self.library.screen,true)
 		movehue()
 	end)
 	--
 	cpimage.MouseButton1Down:Connect(function()
 		colorpicker.cp = true
+		utility.scrolllock(self.library.screen,true)
 		movecp()
 	end)
 	--
@@ -3907,7 +4054,8 @@ function sections:colorpicker(props)
 	end)
 	--
 	uis.InputEnded:Connect(function(Input)
-		if Input.UserInputType.Name == 'MouseButton1'  then
+		if Input.UserInputType.Name == 'MouseButton1' or Input.UserInputType.Name == 'Touch' then
+			utility.scrolllock(self.library.screen,false)
 			if colorpicker.cp then
 				colorpicker.cp = false
 			end
